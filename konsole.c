@@ -55,11 +55,11 @@ void kon_clear_screen(struct konsole *ks) {
 
 static void execute_line(struct konsole *ks) {
     struct kon_line_state *ls = ks->line;
+
     ls->line[ls->len] = '\0';
 
-    /* Copy for tokenization so we don't NUL-out original */
     char line_copy[KONSOLE_MAX_LINE];
-    size_t copy_len = ls->len < (KONSOLE_MAX_LINE-1) ? ls->len : (KONSOLE_MAX_LINE-1);
+    size_t copy_len = (ls->len < (KONSOLE_MAX_LINE - 1)) ? ls->len : (KONSOLE_MAX_LINE - 1);
     memcpy(line_copy, ls->line, copy_len);
     line_copy[copy_len] = '\0';
 
@@ -67,27 +67,30 @@ static void execute_line(struct konsole *ks) {
 
     char *argv[KONSOLE_MAX_ARGS];
     int argc = _kon_tokenize(line_copy, argv, KONSOLE_MAX_ARGS);
+
+#if KONSOLE_HISTORY > 0
+    if (argc > 0 && line_copy[0] != '\0') {
+        _kon_line_add_history(ks, line_copy);
+    }
+#endif
+
     if (argc > 0) {
         const struct kon_cmd *cmd = _kon_find(ks->cmds, ks->cmd_count, argv[0]);
-        if (cmd) {
-#if KONSOLE_HISTORY > 0
-            ls->hist_nav = -1;
-            _kon_line_add_history(ks, line_copy);
-#endif
+        if (cmd && cmd->fn) {
             cmd->fn(ks, argc, argv);
         } else {
             if (ks->on_unknown) ks->on_unknown(ks, line_copy);
             else kon_printf(ks, "unknown: %s\r\n", argv[0]);
         }
     }
-    _kon_line_reset(ks);
-    /* Simulate one DOWN key so history/nav state is guaranteed to be "empty current line".
-    This mirrors what fixes the issue when you press ↓ manually. */
-    #if KONSOLE_HISTORY > 0
-    _kon_line_history(ks, +1);
-    #endif
-    if (ks->prompt) _kon_line_redraw(ks); /* clean prompt */
 
+    _kon_line_reset(ks);
+
+#if KONSOLE_HISTORY > 0
+    _kon_line_history(ks, +1);
+#endif
+
+    if (ks->prompt) _kon_line_redraw(ks);
 }
 
 void kon_feed(struct konsole *ks, const uint8_t *data, size_t len) {
