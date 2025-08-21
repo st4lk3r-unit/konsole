@@ -4,6 +4,20 @@
 #include <stdlib.h>
 #include "konsole.h"
 #include "konsole_priv.h"
+#include "version.h"
+
+static int cmd_version(struct konsole *ks, int argc, char **argv) {
+    (void)argc; (void)argv;
+    kon_printf(ks, "konsole: %s (%d.%d.%d)\r\n",
+        KONSOLE_VERSION_STRING, KONSOLE_VERSION_MAJOR, KONSOLE_VERSION_MINOR, KONSOLE_VERSION_PATCH);
+    kon_printf(ks, "firmware: %s %s\r\n", KONSOLE_FW_NAME, KONSOLE_FW_VERSION);
+    return 0;
+}
+
+static const struct kon_cmd s_builtin_cmds[] = {
+    { "version", "show konsole and firmware versions", cmd_version },
+};
+#define KONSOLE_BUILTIN_COUNT (sizeof(s_builtin_cmds)/sizeof(s_builtin_cmds[0]))
 
 static inline void ts_puts(struct konsole *ks, const char *s) {
     if (ks->io.write) ks->io.write(ks->io.ctx, (const uint8_t*)s, strlen(s));
@@ -34,10 +48,21 @@ void kon_printf(struct konsole *ks, const char *fmt, ...) {
 #endif
 }
 
+static void print_table(struct konsole *ks, const struct kon_cmd *t, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        kon_printf(ks, "  %-12s %s\r\n", t[i].name, t[i].help ? t[i].help : "");
+    }
+}
+
 void kon_print_help(struct konsole *ks) {
-    for (size_t i=0;i<ks->cmd_count;i++) {
-        const char *h = ks->cmds[i].help ? ks->cmds[i].help : "";
-        kon_printf(ks, "%-12s - %s\r\n", ks->cmds[i].name, h);
+    kon_printf(ks, "commands:\r\n");
+
+    print_table(ks, ks->cmds, ks->cmd_count);
+
+    for (size_t i = 0; i < KONSOLE_BUILTIN_COUNT; i++) {
+        const struct kon_cmd *b = &s_builtin_cmds[i];
+        if (_kon_find(ks->cmds, ks->cmd_count, b->name)) continue; /* firmware wins */
+        kon_printf(ks, "  %-12s %s\r\n", b->name, b->help ? b->help : "");
     }
 }
 
@@ -76,6 +101,9 @@ static void execute_line(struct konsole *ks) {
 
     if (argc > 0) {
         const struct kon_cmd *cmd = _kon_find(ks->cmds, ks->cmd_count, argv[0]);
+        if (!cmd) {
+            cmd = _kon_find(s_builtin_cmds, KONSOLE_BUILTIN_COUNT, argv[0]);
+        }
         if (cmd && cmd->fn) {
             cmd->fn(ks, argc, argv);
         } else {
