@@ -14,10 +14,38 @@ static int cmd_version(struct konsole *ks, int argc, char **argv) {
     return 0;
 }
 
+static int cmd_clear(struct konsole *ks, int argc, char **argv) {
+    (void)argc; (void)argv;
+    kon_clear_screen(ks);
+    return 0;
+}
+
+/* Weak hook: firmware can override this */
+__attribute__((weak)) void konsole_on_reboot(void) {
+    /* default: just print a message */
+}
+
+static int cmd_reboot(struct konsole *ks, int argc, char **argv) {
+    (void)argc; (void)argv;
+    kon_printf(ks, "rebooting...\r\n");
+    konsole_on_reboot();
+    return 0;
+}
+
+static int cmd_help_builtin(struct konsole *ks, int argc, char **argv) {
+    (void)argc; (void)argv;
+    kon_print_help(ks);
+    return 0;
+}
+
 static const struct kon_cmd s_builtin_cmds[] = {
-    { "version", "show konsole and firmware versions", cmd_version },
+    { "help",   "list commands",      cmd_help_builtin },
+    { "clear",  "clear the screen",   cmd_clear },
+    { "version","show version info",  cmd_version },
+    { "reboot", "reboot device",      cmd_reboot },
 };
 #define KONSOLE_BUILTIN_COUNT (sizeof(s_builtin_cmds)/sizeof(s_builtin_cmds[0]))
+
 
 static inline void ts_puts(struct konsole *ks, const char *s) {
     if (ks->io.write) ks->io.write(ks->io.ctx, (const uint8_t*)s, strlen(s));
@@ -115,7 +143,7 @@ static void execute_line(struct konsole *ks) {
     _kon_line_reset(ks);
 
 #if KONSOLE_HISTORY > 0
-    _kon_line_history(ks, +1);
+    ks->line->hist_nav = -1;
 #endif
 
     if (ks->prompt) _kon_line_redraw(ks);
