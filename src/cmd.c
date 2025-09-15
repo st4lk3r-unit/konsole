@@ -1,5 +1,5 @@
 #include <string.h>
-#include "konsole.h"
+#include "konsole/konsole.h"
 #include "konsole_priv.h"
 
 int _kon_tokenize(char *line, char *argv[], int max) {

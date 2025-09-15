@@ -1,6 +1,6 @@
 #include <string.h>
 #include <stdio.h>
-#include "konsole.h"
+#include "konsole/konsole.h"
 #include "konsole_priv.h"
 
 static inline void ts_puts(struct konsole *ks, const char *s) {
@@ -8,46 +8,53 @@ static inline void ts_puts(struct konsole *ks, const char *s) {
 }
 
 static void redraw(struct konsole *ks) {
-    struct kon_line_state *ls = ks->line;
+        struct kon_line_state *ls = ks->line;
+    const size_t prompt_len = ks->prompt ? strlen(ks->prompt) : 0;
 #if KONSOLE_ENABLE_VT100
     if (ks->mode == KON_MODE_ANSI && ks->vt100) {
-        ts_puts(ks, "\r\x1b[2K");
+            /* Hard redraw: CR, prompt, buffer, clear-to-EOL, then fix cursor */
+        ts_puts(ks, "\r");
         if (ks->prompt) ts_puts(ks, ks->prompt);
-        ts_puts(ks, ls->line);
-        size_t tail = ls->len - ls->cursor;
-        if (tail) {
-            char seq[16];
-            snprintf(seq, sizeof(seq), "\x1b[%zuD", tail);
+        if (ls->len) ks->io.write(ks->io.ctx, (const uint8_t*)ls->line, ls->len);
+        ts_puts(ks, "\x1b[K"); /* CSI K (0K): clear from cursor to end of line */
+        size_t want = prompt_len + ls->cursor;
+        size_t have = prompt_len + ls->len;
+        if (have > want) {
+                char seq[16]; snprintf(seq, sizeof seq, "\x1b[%zuD", have - want);
+            ts_puts(ks, seq);
+        } else if (want > have) {
+                char seq[16]; snprintf(seq, sizeof seq, "\x1b[%zuC", want - have);
             ts_puts(ks, seq);
         }
-        ks->last_screen_len = (ks->prompt ? strlen(ks->prompt) : 0) + ls->len;
+        ks->last_screen_len = prompt_len + ls->len;
         return;
     }
 #endif
-    /* Non-ANSI / compat: fully clear previous content, then draw fresh prompt+line */
-    size_t old_total = ks->last_screen_len + 8; /* cushion */
+    /* Non-ANSI fallback: wipe old content area and reprint */
     ts_puts(ks, "\r");
-    while (old_total--) ts_puts(ks, " ");
+    for (size_t i = 0; i < ks->last_screen_len + 32; ++i) ts_puts(ks, " ");
     ts_puts(ks, "\r");
     if (ks->prompt) ts_puts(ks, ks->prompt);
-    ts_puts(ks, ls->line);
-    ks->last_screen_len = (ks->prompt ? strlen(ks->prompt) : 0) + ls->len;
+    if (ls->len) ks->io.write(ks->io.ctx, (const uint8_t*)ls->line, ls->len);
+    ks->last_screen_len = prompt_len + ls->len;
 }
 
 void _kon_line_redraw(struct konsole *ks) { redraw(ks); }
 
+
 void _kon_line_reset(struct konsole *ks) {
     struct kon_line_state *ls = ks->line;
-    ls->len = 0; ls->cursor = 0; ls->line[0] = '\0';
+    ls->len = 0;
+    ls->cursor = 0;
+    if (ls->line[0]) ls->line[0] = '\0';
+    ks->last_screen_len = 0;
 }
 
 void _kon_line_insert(struct konsole *ks, char c) {
     struct kon_line_state *ls = ks->line;
     if (ls->len + 1 >= KONSOLE_MAX_LINE) return;
-    /* In compat, treat as append-only to avoid mid-line complexity */
-    if (!(ks->mode == KON_MODE_ANSI && ks->vt100)) {
-        ls->cursor = ls->len; /* force end */
-    }
+    /* Non-ANSI: append-only editing to keep logic simple */
+    if (!(ks->mode == KON_MODE_ANSI && ks->vt100)) ls->cursor = ls->len;
     for (size_t i = ls->len; i > ls->cursor; i--) ls->line[i] = ls->line[i-1];
     ls->line[ls->cursor] = c;
     ls->len++; ls->cursor++;
@@ -108,31 +115,72 @@ static void add_history(struct konsole *ks, const char *s) {
     ls->hist_head = (ls->hist_head + 1) % KONSOLE_HISTORY;
     if (ls->hist_count < KONSOLE_HISTORY) ls->hist_count++;
 }
-void _kon_line_add_history(struct konsole *ks, const char *s) { add_history(ks, s); }
+
+void _kon_line_add_history(struct konsole *ks, const char *s) {
+        struct kon_line_state *ls = ks->line;
+#if KONSOLE_HISTORY <= 0
+    (void)ks; (void)s; return;
+#else
+    if (!s || !*s) return;
+    /* Dedup against last entry */
+    if (ls->hist_count > 0) {
+            int last = ls->hist_head - 1; if (last < 0) last = KONSOLE_HISTORY - 1;
+        if (strncmp(ls->hist[last], s, KONSOLE_MAX_LINE) == 0) {
+                ls->hist_nav = -1; return;
+        }
+    }
+    strncpy(ls->hist[ls->hist_head], s, KONSOLE_MAX_LINE);
+    ls->hist[ls->hist_head][KONSOLE_MAX_LINE-1] = '\0';
+    ls->hist_head = (ls->hist_head + 1) % KONSOLE_HISTORY;
+    if (ls->hist_count < KONSOLE_HISTORY) ls->hist_count++;
+    ls->hist_nav = -1;
+#endif
+}
+
+/* HISTORY NAVIGATION */
 void _kon_line_history(struct konsole *ks, int dir) {
-    struct kon_line_state *ls = ks->line;
-    /* History navigation only in ANSI mode */
-    if (!(ks->mode == KON_MODE_ANSI && ks->vt100)) return;
-    if (!ls->hist_count) return;
-    if (ls->hist_nav < 0) ls->hist_nav = ls->hist_head;
-    int i = ls->hist_nav;
-    if (dir < 0) i = (i - 1 + KONSOLE_HISTORY) % KONSOLE_HISTORY;
-    else {
-        i = (i + 1) % KONSOLE_HISTORY;
-        if (i == ls->hist_head) {
+        struct kon_line_state *ls = ks->line;
+#if KONSOLE_HISTORY <= 0
+    (void)dir; (void)ls;
+    return;
+#else
+    if (ls->hist_count == 0) return;
+    /* dir < 0 => Up (older). dir > 0 => Down (newer). */
+    if (dir < 0) {
+            if (ls->hist_nav == -1) {
+                /* First time entering history: stash current edit buffer in head slot */
+            strncpy(ls->hist[ls->hist_head], ls->line, KONSOLE_MAX_LINE);
+            ls->hist[ls->hist_head][KONSOLE_MAX_LINE-1] = '\0';
+            ls->hist_nav = 0;
+        } else if (ls->hist_nav < ls->hist_count - 1) {
+                ls->hist_nav++;
+        }
+    } else if (dir > 0) {
+            if (ls->hist_nav == -1) return; /* already live */
+        if (ls->hist_nav > 0) {
+                ls->hist_nav--;
+        } else {
+                /* Leaving history: restore stash (live buffer) */
             ls->hist_nav = -1;
-            ls->len = ls->cursor = 0;
-            ls->line[0] = '\0';
+            strncpy(ls->line, ls->hist[ls->hist_head], KONSOLE_MAX_LINE);
+            ls->line[KONSOLE_MAX_LINE-1] = '\0';
+            ls->len = strlen(ls->line);
+            ls->cursor = ls->len;
             redraw(ks);
             return;
         }
+    } else {
+            return;
     }
-    if (i == ls->hist_head) return;
-    strncpy(ls->line, ls->hist[i], KONSOLE_MAX_LINE - 1);
-    ls->line[KONSOLE_MAX_LINE - 1] = '\0';
-    ls->len = ls->cursor = strlen(ls->line);
-    ls->hist_nav = i;
+    /* Map nav offset to circular index: 0 => most recent entry */
+    int idx = ls->hist_head - 1 - ls->hist_nav;
+    if (idx < 0) idx += KONSOLE_HISTORY;
+    strncpy(ls->line, ls->hist[idx], KONSOLE_MAX_LINE);
+    ls->line[KONSOLE_MAX_LINE-1] = '\0';
+    ls->len = strlen(ls->line);
+    ls->cursor = ls->len;
     redraw(ks);
+#endif
 }
 #else
 void _kon_line_add_history(struct konsole *ks, const char *s) { (void)ks; (void)s; }
