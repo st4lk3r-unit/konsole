@@ -1,6 +1,6 @@
 #include <string.h>
 #include <stdio.h>
-#include "konsole.h"
+#include "konsole/konsole.h"
 #include "konsole_priv.h"
 
 static inline void ts_puts(struct konsole *ks, const char *s) {

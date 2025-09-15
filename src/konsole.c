@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include "konsole.h"
-#include "konsole_priv.h"
+#include "konsole/konsole.h"
+#include "konsole/konsole_priv.h"
 #include "version.h"
 
 static int cmd_version(struct konsole *ks, int argc, char **argv) {

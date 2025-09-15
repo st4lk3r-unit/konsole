@@ -5,11 +5,11 @@ It’s designed to drop into projects on **ESP32, STM32, nRF5, Arduino**, or any
 
 The goals:
 
-* **No external dependencies** – bare C, works in any firmware.
-* **Configurable** – ANSI editing, history, clearing, prompt, banner.
-* **Compact** – minimal RAM/flash footprint, tunable features.
-* **Portable** – adapters for Arduino `Serial`, STM32 HAL UART, nRF5 app\_uart.
-* **Convenient by default** – ANSI mode enabled, history, prompt, clear, help.
+* **No external dependencies** - bare C, works in any firmware.
+* **Configurable** - ANSI editing, history, clearing, prompt, banner.
+* **Compact** - minimal RAM/flash footprint, tunable features.
+* **Portable** - adapters for Arduino `Serial`, STM32 HAL UART, nRF5 app\_uart.
+* **Convenient by default** - ANSI mode enabled, history, prompt, clear, help.
 
 
 ## Features
@@ -18,8 +18,8 @@ The goals:
 * Command table with name, description, and handler callback.
 * Built-in helpers:
 
-  * `help` – list commands with descriptions
-  * `clear` – clear the screen (ANSI or compat fallback)
+  * `help` - list commands with descriptions
+  * `clear` - clear the screen (ANSI or compat fallback)
 * Command history (up/down arrows in ANSI mode).
 * Works with most monitors:
   `screen`, `minicom`, `idf-monitor`, `pio device monitor`, etc.
@@ -116,6 +116,7 @@ platform = espressif32
 board = esp32dev
 framework = arduino
 monitor_speed = 115200
+monitor_raw = yes
 ```
 
 ## Commands in action
@@ -139,10 +140,14 @@ uptime: 5321 ms
 
 Adjustable via `#define`s in `konsole.h`:
 
-* `KONSOLE_MAX_LINE` – maximum line length (default 128).
-* `KONSOLE_HISTORY` – number of saved commands (default 8).
-* `KONSOLE_CLEAR_COLS` – fallback clear width in compat mode (default 120).
-* `KON_MODE_COMPAT` vs `KON_MODE_ANSI` – runtime modes.
+* `KONSOLE_MAX_LINE` - maximum line length (default 128).
+* `KONSOLE_HISTORY` - number of saved commands (default 8).
+* `KONSOLE_CLEAR_COLS` - fallback clear width in compat mode (default 120).
+* `KON_MODE_COMPAT` vs `KON_MODE_ANSI` - runtime modes.
+
+* `DKONSOLE_FW_NAME` - custom firmware name (`\"custom\"`) 
+* `DKONSOLE_FW_VERSION` - custom version (`\"v0.1\"`)
+
 
 At runtime:
 
