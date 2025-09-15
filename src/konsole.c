@@ -111,21 +111,25 @@ static void execute_line(struct konsole *ks) {
 
     ls->line[ls->len] = '\0';
 
-    char line_copy[KONSOLE_MAX_LINE];
-    size_t copy_len = (ls->len < (KONSOLE_MAX_LINE - 1)) ? ls->len : (KONSOLE_MAX_LINE - 1);
-    memcpy(line_copy, ls->line, copy_len);
-    line_copy[copy_len] = '\0';
+    char raw_line[KONSOLE_MAX_LINE];
+    size_t raw_len = (ls->len < (KONSOLE_MAX_LINE - 1)) ? ls->len : (KONSOLE_MAX_LINE - 1);
+    memcpy(raw_line, ls->line, raw_len);
+    raw_line[raw_len] = '\0';
 
     ts_puts(ks, "\r\n");
 
+#if KONSOLE_HISTORY > 0
+    bool nonspace = false;
+    for (size_t i = 0; i < raw_len; ++i) { if (raw_line[i] > ' ') { nonspace = true; break; } }
+    if (nonspace) { _kon_line_add_history(ks, raw_line); }
+#endif
+
+    char line_copy[KONSOLE_MAX_LINE];
+
+    memcpy(line_copy, raw_line, raw_len + 1);
+
     char *argv[KONSOLE_MAX_ARGS];
     int argc = _kon_tokenize(line_copy, argv, KONSOLE_MAX_ARGS);
-
-#if KONSOLE_HISTORY > 0
-    if (argc > 0 && line_copy[0] != '\0') {
-        _kon_line_add_history(ks, line_copy);
-    }
-#endif
 
     if (argc > 0) {
         const struct kon_cmd *cmd = _kon_find(ks->cmds, ks->cmd_count, argv[0]);
@@ -135,7 +139,7 @@ static void execute_line(struct konsole *ks) {
         if (cmd && cmd->fn) {
             cmd->fn(ks, argc, argv);
         } else {
-            if (ks->on_unknown) ks->on_unknown(ks, line_copy);
+            if (ks->on_unknown) ks->on_unknown(ks, raw_line);
             else kon_printf(ks, "unknown: %s\r\n", argv[0]);
         }
     }
