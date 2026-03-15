@@ -1,6 +1,6 @@
 #include <string.h>
 #include "konsole/konsole.h"
-#include "konsole_priv.h"
+#include "konsole/konsole_priv.h"
 
 int _kon_tokenize(char *line, char *argv[], int max) {
     int argc = 0; char *p = line; int inq = 0; char *start = NULL;

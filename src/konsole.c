@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include "konsole/konsole.h"
 #include "konsole/konsole_priv.h"
-#include "version.h"
+#include "konsole/version.h"
 
 static int cmd_version(struct konsole *ks, int argc, char **argv) {
     (void)argc; (void)argv;

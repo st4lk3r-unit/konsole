@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "konsole/konsole.h"
-#include "konsole_priv.h"
+#include "konsole/konsole_priv.h"
 
 static inline void ts_puts(struct konsole *ks, const char *s) {
     if (ks->io.write) ks->io.write(ks->io.ctx, (const uint8_t*)s, strlen(s));
